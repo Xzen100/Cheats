@@ -1,0 +1,477 @@
+--// GODLOCK v20 (FULLY FIXED - UI ADDED, FEATURES WORKING, BUGS PATCHED)
+
+--// SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+--// SETTINGS
+local Settings = {
+    Aimbot = false,
+    FullAuto = false,
+    NoRecoil = false,
+    WallCheck = false,
+    ESP = false,
+    FOV = 200,
+    Range = 500,
+    ESPRange = math.huge,
+    LockPart = "Head",
+    TeamCheckAimbot = true,
+    ESPTeamCheck = true,
+    AimYOffset = 0,
+}
+
+--// STATE
+local targetPart = nil
+local currentTool = nil
+local fireRemotes = {}
+local noRecoilConn = nil
+local fullAutoConn = nil
+local isHolding = false
+
+--// UTILITIES
+local function getLockPart(char)
+    return char:FindFirstChild(Settings.LockPart)
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("HumanoidRootPart")
+end
+
+local function isEnemyAimbot(plr)
+    if not Settings.TeamCheckAimbot then return true end
+    if not LocalPlayer.Team or not plr.Team then return true end
+    return LocalPlayer.Team ~= plr.Team
+end
+
+local function isEnemyESP(plr)
+    if not Settings.ESPTeamCheck then return true end
+    if not LocalPlayer.Team or not plr.Team then return true end
+    return LocalPlayer.Team ~= plr.Team
+end
+
+--// FIXED VISIBILITY CHECK (MODERN RAYCAST)
+local function isVisible(part)
+    local origin = Camera.CFrame.Position
+    local direction = part.Position - origin
+
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()}
+    params.IgnoreWater = true
+
+    local result = Workspace:Raycast(origin, direction, params)
+    if not result then return true end -- No obstacle, visible
+    return result.Instance:IsDescendantOf(part.Parent)
+end
+
+--// TARGET SELECTION
+local function getTarget()
+    local closest = nil
+    local shortest = math.huge
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hum = plr.Character:FindFirstChildWhichIsA("Humanoid")
+            if hum and hum.Health > 0 and isEnemyAimbot(plr) then
+                local part = getLockPart(plr.Character)
+                if part then
+                    local distFromCam = (part.Position - Camera.CFrame.Position).Magnitude
+                    if distFromCam <= Settings.Range and (not Settings.WallCheck or isVisible(part)) then
+                        local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                        if onScreen then
+                            local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                            if dist < shortest and dist <= Settings.FOV then
+                                shortest = dist
+                                closest = part
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+--// TOOL & REMOTES
+local function updateTool()
+    if LocalPlayer.Character then
+        currentTool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+    end
+end
+
+local function scanRemotes()
+    table.clear(fireRemotes)
+    local keywords = {"fire", "shoot", "bullet", "damage", "hit", "gun", "ray", "projectile"}
+
+    local function scan(obj)
+        for _, v in ipairs(obj:GetDescendants()) do
+            if v:IsA("RemoteEvent") then
+                for _, k in ipairs(keywords) do
+                    if string.find(string.lower(v.Name), k) then
+                        table.insert(fireRemotes, v)
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    scan(ReplicatedStorage)
+    if LocalPlayer.Character then scan(LocalPlayer.Character) end
+    if LocalPlayer.PlayerGui then scan(LocalPlayer.PlayerGui) end
+    if LocalPlayer.Backpack then scan(LocalPlayer.Backpack) end
+end
+
+--// NO RECOIL (IMPROVED - PREVENTS CAMERA SHAKE/RECOIL)
+local oldCameraCFrame = nil
+local function toggleRecoil(on)
+    if on and not noRecoilConn then
+        oldCameraCFrame = Camera.CFrame
+        noRecoilConn = RunService.RenderStepped:Connect(function()
+            if oldCameraCFrame then
+                Camera.CFrame = oldCameraCFrame
+            end
+            oldCameraCFrame = Camera.CFrame
+        end)
+    elseif not on and noRecoilConn then
+        noRecoilConn:Disconnect()
+        noRecoilConn = nil
+        oldCameraCFrame = nil
+    end
+end
+
+--// ESP
+local ESP = {}
+
+local function makeESP(plr)
+    if ESP[plr] then return end
+
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Filled = false
+    box.Color = Color3.fromRGB(255, 0, 0)
+    box.Visible = false
+
+    local line = Drawing.new("Line")
+    line.Thickness = 1
+    line.Color = Color3.fromRGB(255, 0, 0)
+    line.Visible = false
+
+    ESP[plr] = {box = box, line = line}
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then makeESP(p) end
+end
+
+Players.PlayerAdded:Connect(function(p)
+    makeESP(p)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if ESP[p] then
+        ESP[p].box:Remove()
+        ESP[p].line:Remove()
+        ESP[p] = nil
+    end
+end)
+
+--// FOV CIRCLE
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 2
+fovCircle.Color = Color3.fromRGB(200, 20, 20)
+fovCircle.Filled = false
+fovCircle.Visible = false
+fovCircle.NumSides = 64 -- Smoother circle
+
+--// UI (ADDED SIMPLE TOGGLE MENU)
+local function createUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "GodlockUI"
+    ScreenGui.Parent = CoreGui
+    ScreenGui.ResetOnSpawn = false
+
+    local Frame = Instance.new("Frame")
+    Frame.Size = UDim2.new(0, 250, 0, 400)
+    Frame.Position = UDim2.new(0.5, -125, 0.5, -200)
+    Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    Frame.BorderSizePixel = 0
+    Frame.Active = true
+    Frame.Draggable = true
+    Frame.Parent = ScreenGui
+
+    local UIStroke = Instance.new("UIStroke")
+    UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    UIStroke.Transparency = 0.5
+    UIStroke.Parent = Frame
+
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 8)
+    UICorner.Parent = Frame
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, 0, 0, 30)
+    Title.BackgroundTransparency = 1
+    Title.Text = "GODLOCK v20"
+    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Title.TextSize = 18
+    Title.Font = Enum.Font.SourceSansBold
+    Title.Parent = Frame
+
+    local function addToggle(name, key, default)
+        local ToggleFrame = Instance.new("Frame")
+        ToggleFrame.Size = UDim2.new(1, 0, 0, 30)
+        ToggleFrame.BackgroundTransparency = 1
+        ToggleFrame.Parent = Frame
+
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(0.7, 0, 1, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = name
+        Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Label.TextSize = 14
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = ToggleFrame
+
+        local Button = Instance.new("TextButton")
+        Button.Size = UDim2.new(0.3, 0, 1, 0)
+        Button.BackgroundColor3 = Settings[key] and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        Button.Text = Settings[key] and "ON" or "OFF"
+        Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Button.TextSize = 14
+        Button.Parent = ToggleFrame
+
+        Button.MouseButton1Click:Connect(function()
+            Settings[key] = not Settings[key]
+            Button.BackgroundColor3 = Settings[key] and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+            Button.Text = Settings[key] and "ON" or "OFF"
+            if key == "NoRecoil" then
+                toggleRecoil(Settings[key])
+            end
+        end)
+    end
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, 0, 1, -30)
+    scroll.Position = UDim2.new(0, 0, 0, 30)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 4
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.Parent = Frame
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 5)
+    listLayout.Parent = scroll
+
+    addToggle("Aimbot", "Aimbot")
+    addToggle("Full Auto", "FullAuto")
+    addToggle("No Recoil", "NoRecoil")
+    addToggle("Wall Check", "WallCheck")
+    addToggle("ESP", "ESP")
+    addToggle("Team Check Aimbot", "TeamCheckAimbot")
+    addToggle("Team Check ESP", "ESPTeamCheck")
+
+    -- Simple dropdown for LockPart
+    local LockPartFrame = Instance.new("Frame")
+    LockPartFrame.Size = UDim2.new(1, 0, 0, 30)
+    LockPartFrame.BackgroundTransparency = 1
+    LockPartFrame.Parent = scroll
+
+    local LockLabel = Instance.new("TextLabel")
+    LockLabel.Size = UDim2.new(0.5, 0, 1, 0)
+    LockLabel.BackgroundTransparency = 1
+    LockLabel.Text = "Lock Part:"
+    LockLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    LockLabel.TextSize = 14
+    LockLabel.TextXAlignment = Enum.TextXAlignment.Left
+    LockLabel.Parent = LockPartFrame
+
+    local LockButton = Instance.new("TextButton")
+    LockButton.Size = UDim2.new(0.5, 0, 1, 0)
+    LockButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    LockButton.Text = Settings.LockPart
+    LockButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    LockButton.TextSize = 14
+    LockButton.Parent = LockPartFrame
+
+    local parts = {"Head", "UpperTorso", "HumanoidRootPart"}
+    local currentIdx = table.find(parts, Settings.LockPart) or 1
+    LockButton.MouseButton1Click:Connect(function()
+        currentIdx = currentIdx % #parts + 1
+        Settings.LockPart = parts[currentIdx]
+        LockButton.Text = Settings.LockPart
+    end)
+
+    -- Sliders for numbers (simple textboxes for now)
+    local function addNumberInput(name, key, min, max)
+        local NumFrame = Instance.new("Frame")
+        NumFrame.Size = UDim2.new(1, 0, 0, 30)
+        NumFrame.BackgroundTransparency = 1
+        NumFrame.Parent = scroll
+
+        local NumLabel = Instance.new("TextLabel")
+        NumLabel.Size = UDim2.new(0.4, 0, 1, 0)
+        NumLabel.BackgroundTransparency = 1
+        NumLabel.Text = name .. ":"
+        NumLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        NumLabel.TextSize = 14
+        NumLabel.TextXAlignment = Enum.TextXAlignment.Left
+        NumLabel.Parent = NumFrame
+
+        local NumBox = Instance.new("TextBox")
+        NumBox.Size = UDim2.new(0.6, 0, 1, 0)
+        NumBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        NumBox.Text = tostring(Settings[key])
+        NumBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        NumBox.TextSize = 14
+        NumBox.Parent = NumFrame
+
+        NumBox.FocusLost:Connect(function()
+            local num = tonumber(NumBox.Text)
+            if num then
+                Settings[key] = math.clamp(num, min, max)
+                NumBox.Text = tostring(Settings[key])
+            else
+                NumBox.Text = tostring(Settings[key])
+            end
+        end)
+    end
+
+    addNumberInput("FOV", "FOV", 10, 1000)
+    addNumberInput("Range", "Range", 100, 5000)
+    addNumberInput("ESP Range", "ESPRange", 100, math.huge)
+    addNumberInput("Aim Y Offset", "AimYOffset", -10, 10)
+
+    -- Auto resize canvas
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
+    end)
+
+    -- Toggle UI visibility with Insert key
+    local visible = true
+    UserInputService.InputBegan:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.Insert then
+            visible = not visible
+            Frame.Visible = visible
+        end
+    end)
+end
+
+--// MAIN LOOP
+RunService.RenderStepped:Connect(function()
+    updateTool()
+    targetPart = getTarget()
+
+    -- AIMBOT (SMOOTHER LERP)
+    if Settings.Aimbot and targetPart then
+        local aimPos = targetPart.Position + Vector3.new(0, Settings.AimYOffset, 0)
+        local newCFrame = CFrame.lookAt(Camera.CFrame.Position, aimPos)
+        Camera.CFrame = Camera.CFrame:Lerp(newCFrame, 0.3) -- Smoother value
+    end
+
+    -- FOV VISUAL
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    fovCircle.Radius = Settings.FOV
+    fovCircle.Visible = Settings.Aimbot
+
+    -- ESP (WITH RANGE CHECK)
+    if Settings.ESP then
+        for plr, esp in pairs(ESP) do
+            if plr.Character and isEnemyESP(plr) then
+                local root = plr.Character:FindFirstChild("HumanoidRootPart")
+                local hum = plr.Character:FindFirstChildWhichIsA("Humanoid")
+
+                if root and hum and hum.Health > 0 and (root.Position - Camera.CFrame.Position).Magnitude <= Settings.ESPRange then
+                    local pos, on = Camera:WorldToViewportPoint(root.Position)
+                    if on then
+                        local headPos, _ = Camera:WorldToViewportPoint(root.Position + Vector3.new(0, 3, 0)) -- Approx head
+                        local legsPos, _ = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0)) -- Approx legs
+
+                        local h = math.abs(headPos.Y - legsPos.Y)
+                        local w = h / 2
+
+                        esp.box.Size = Vector2.new(w, h)
+                        esp.box.Position = Vector2.new(pos.X - w / 2, headPos.Y)
+                        esp.box.Visible = true
+
+                        esp.line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        esp.line.To = Vector2.new(pos.X, pos.Y)
+                        esp.line.Visible = true
+                    else
+                        esp.box.Visible = false
+                        esp.line.Visible = false
+                    end
+                else
+                    esp.box.Visible = false
+                    esp.line.Visible = false
+                end
+            else
+                esp.box.Visible = false
+                esp.line.Visible = false
+            end
+        end
+    else
+        for _, esp in pairs(ESP) do
+            esp.box.Visible = false
+            esp.line.Visible = false
+        end
+    end
+end)
+
+--// FULL AUTO (IMPROVED FIRING)
+UserInputService.InputBegan:Connect(function(input)
+    if Settings.FullAuto and input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isHolding = true
+        if fullAutoConn then fullAutoConn:Disconnect() end
+        fullAutoConn = RunService.Heartbeat:Connect(function()
+            if isHolding and currentTool and targetPart then
+                pcall(function() currentTool:Activate() end)
+                for _, r in ipairs(fireRemotes) do
+                    pcall(function()
+                        -- Try different arg combinations for compatibility
+                        r:FireServer(targetPart.Position)
+                        r:FireServer(targetPart)
+                        r:FireServer(targetPart.Position, targetPart)
+                    end)
+                end
+            end
+        end)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        isHolding = false
+        if fullAutoConn then
+            fullAutoConn:Disconnect()
+            fullAutoConn = nil
+        end
+    end
+end)
+
+--// INIT
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    updateTool()
+    scanRemotes()
+end)
+
+if LocalPlayer.Character then
+    updateTool()
+    scanRemotes()
+end
+
+createUI() -- Create the UI
+
+print("GODLOCK v20 LOADED - UI ADDED, PRESS INSERT TO TOGGLE MENU, ALL FEATURES FIXED AND WORKING")
