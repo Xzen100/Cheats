@@ -1,0 +1,295 @@
+--// UNIVERSAL AIMBOT (OPTIMIZED + STICKIER AIM + STABLE UI/ROUND REFRESH)
+
+--// SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+--// SETTINGS
+local Settings = {
+    Aimbot = false,
+    WallCheck = false,
+    ESP = false,
+    FOV = 200,
+    Range = math.huge,
+    ESPRange = math.huge,
+    LockPart = "Head",
+    TeamCheckAimbot = true,
+    ESPTeamCheck = true,
+    AimYOffset = 0,
+    -- Hidden / advanced
+    Prediction = 0.135,      -- velocity multiplier (0.12-0.18 sweet spot)
+    SmoothClose = 0.68,      -- lerp when already near target
+    SmoothFar   = 0.92,      -- lerp when far from target
+}
+
+--// STATE
+local targetPart = nil
+local ESP = {}
+local gui, panel, circle
+
+--// UTILITIES
+local function getLockPart(char)
+    if not char then return nil end
+    return char:FindFirstChild(Settings.LockPart)
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("HumanoidRootPart")
+end
+
+local function isEnemyAimbot(plr)
+    if not Settings.TeamCheckAimbot then return true end
+    if not LocalPlayer.Team or not plr.Team then return true end
+    return LocalPlayer.Team \~= plr.Team
+end
+
+local function isEnemyESP(plr)
+    if not Settings.ESPTeamCheck then return true end
+    if not LocalPlayer.Team or not plr.Team then return true end
+    return LocalPlayer.Team \~= plr.Team
+end
+
+local function isVisible(part)
+    if not part or not LocalPlayer.Character then return false end
+    local origin = Camera.CFrame.Position
+    local direction = part.Position - origin
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    params.IgnoreWater = true
+    local result = workspace:Raycast(origin, direction, params)
+    return not result or result.Instance:IsDescendantOf(part.Parent)
+end
+
+local function getTarget()
+    local closest, shortest = nil, math.huge
+    local center = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y * 0.5)
+
+    for _, plr in Players:GetPlayers() do
+        if plr == LocalPlayer or not plr.Character then continue end
+        local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        if not isEnemyAimbot(plr) then continue end
+
+        local part = getLockPart(plr.Character)
+        if not part then continue end
+
+        if Settings.WallCheck and not isVisible(part) then continue end
+
+        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+        if dist > Settings.FOV or dist >= shortest then continue end
+
+        shortest = dist
+        closest = part
+    end
+    return closest
+end
+
+--// ESP
+local function makeESP(plr)
+    if ESP[plr] then
+        ESP[plr].box:Remove()
+        ESP[plr].line:Remove()
+    end
+
+    local box = Drawing.new("Square")
+    box.Thickness = 2; box.Filled = false; box.Color = Color3.fromRGB(255,0,0); box.Visible = false
+
+    local line = Drawing.new("Line")
+    line.Thickness = 2; line.Color = Color3.fromRGB(255,0,0); line.Transparency = 0.7; line.Visible = false
+
+    ESP[plr] = {box = box, line = line}
+end
+
+local function cleanupESP(plr)
+    if ESP[plr] then
+        ESP[plr].box:Remove()
+        ESP[plr].line:Remove()
+        ESP[plr] = nil
+    end
+end
+
+-- Initial ESP
+for _, plr in Players:GetPlayers() do
+    if plr \~= LocalPlayer then makeESP(plr) end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    if plr \~= LocalPlayer then makeESP(plr) end
+end)
+
+Players.PlayerRemoving:Connect(cleanupESP)
+
+--// UI
+local function createUI()
+    if gui then gui:Destroy() end
+
+    gui = Instance.new("ScreenGui")
+    gui.Name = "UniversalAimbot"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 999999
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui") or game:GetService("CoreGui")
+
+    panel = Instance.new("Frame")
+    panel.Size = UDim2.new(0,500,0,220)
+    panel.Position = UDim2.new(0.5,-250,0.5,-110)
+    panel.BackgroundColor3 = Color3.fromRGB(14,14,14)
+    panel.Active = true
+    panel.Draggable = true
+    panel.Visible = false  -- start minimized
+    panel.Parent = gui
+
+    local corner = Instance.new("UICorner", panel); corner.CornerRadius = UDim.new(0,8)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,-10,0,30)
+    title.Position = UDim2.new(0,5,0,0)
+    title.BackgroundTransparency = 1
+    title.Text = "UNIVERSAL AIMBOT"
+    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.Parent = panel
+
+    local function btn(name, key, y)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0,150,0,25)
+        b.Position = UDim2.new(0,10,0,y)
+        b.Text = name..": OFF"
+        b.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        b.TextColor3 = Color3.fromRGB(220,220,220)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 14
+        b.Parent = panel
+        local bc = Instance.new("UICorner", b); bc.CornerRadius = UDim.new(0,4)
+
+        b.MouseButton1Click:Connect(function()
+            Settings[key] = not Settings[key]
+            b.Text = name..": "..(Settings[key] and "ON" or "OFF")
+            b.BackgroundColor3 = Settings[key] and Color3.fromRGB(0,170,0) or Color3.fromRGB(30,30,30)
+        end)
+    end
+
+    btn("Aimbot", "Aimbot", 40)
+    btn("Wall Check", "WallCheck", 70)
+    btn("ESP (360° Tracers)", "ESP", 100)
+    btn("Team Check Aimbot", "TeamCheckAimbot", 130)
+    btn("ESP Team Check", "ESPTeamCheck", 160)
+
+    -- Y Offset + FOV (same as before)
+    -- ... paste your existing Y/FOV controls here ...
+
+    -- Circle toggle (fixed + feedback)
+    circle = Instance.new("TextButton")
+    circle.Size = UDim2.new(0,70,0,70)
+    circle.Position = UDim2.new(1,-90,0,40)
+    circle.BackgroundColor3 = Color3.fromRGB(200,20,20)
+    circle.Text = "O"  -- start minimized
+    circle.TextColor3 = Color3.fromRGB(255,255,255)
+    circle.Font = Enum.Font.GothamBold
+    circle.TextSize = 20
+    circle.ZIndex = 10
+    circle.Parent = gui
+
+    local cCorner = Instance.new("UICorner", circle); cCorner.CornerRadius = UDim.new(1,0)
+
+    local dragStart, startPos, isClick = nil, nil, false
+
+    circle.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragStart = i.Position
+            startPos = circle.Position
+            isClick = true
+        end
+    end)
+
+    circle.InputChanged:Connect(function(i)
+        if dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local delta = i.Position - dragStart
+            circle.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            if delta.Magnitude > 8 then isClick = false end
+        end
+    end)
+
+    circle.InputEnded:Connect(function(i)
+        if (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) and isClick then
+            panel.Visible = not panel.Visible
+            circle.Text = panel.Visible and "X" or "O"
+            circle.BackgroundColor3 = Color3.fromRGB(0,200,0)  -- flash green
+            task.delay(0.15, function() circle.BackgroundColor3 = Color3.fromRGB(200,20,20) end)
+        end
+        dragStart = nil
+        isClick = false
+    end)
+
+    -- Insert backup
+    UserInputService.InputBegan:Connect(function(i)
+        if i.KeyCode == Enum.KeyCode.Insert then
+            panel.Visible = not panel.Visible
+            circle.Text = panel.Visible and "X" or "O"
+        end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function() task.wait(1.8) createUI() end)
+createUI()
+
+--// MAIN LOOP (OPTIMIZED + STICKY)
+local cache = {viewport = Vector2.zero, center = Vector2.zero}
+RunService.Heartbeat:Connect(function(dt)
+    if not Camera then return end
+
+    cache.viewport = Camera.ViewportSize
+    cache.center = cache.viewport * 0.5
+
+    targetPart = getTarget()
+
+    if Settings.Aimbot and targetPart then
+        local pos = targetPart.Position + Vector3.new(0, Settings.AimYOffset, 0)
+
+        -- Basic prediction (velocity compensation)
+        local root = targetPart.Parent:FindFirstChild("HumanoidRootPart")
+        if root and root.Velocity.Magnitude > 5 then
+            pos += root.Velocity * Settings.Prediction
+        end
+
+        local targetCF = CFrame.lookAt(Camera.CFrame.Position, pos)
+        local currentCF = Camera.CFrame
+
+        local distToTarget = (targetPart.Position - Camera.CFrame.Position).Magnitude
+        local alpha = distToTarget > 80 and Settings.SmoothFar or Settings.SmoothClose
+
+        Camera.CFrame = currentCF:Lerp(targetCF, alpha)
+
+        -- Scoped burst override
+        if Camera.FieldOfView < 60 then
+            task.spawn(function()
+                task.wait(0.02)
+                Camera.CFrame = targetCF
+            end)
+        end
+    end
+
+    fovCircle.Position = cache.center
+    fovCircle.Radius = Settings.FOV
+    fovCircle.Visible = Settings.Aimbot
+
+    -- ESP update (same as before, but skipped if not enabled)
+    if Settings.ESP then
+        -- ... your existing ESP loop ...
+    else
+        for _, data in ESP do
+            data.box.Visible = false
+            data.line.Visible = false
+        end
+    end
+end)
+
+print("UNIVERSAL AIMBOT LOADED - stickier aim + optimized + stable UI")
