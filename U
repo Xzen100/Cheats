@@ -1,0 +1,243 @@
+--// UNIVERSAL AIMBOT (UI FIXED WITH OPTIONS + SMALLER CIRCLE)
+
+--// SERVICES
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+--// SETTINGS
+local Settings = {
+    Aimbot = false,
+    WallCheck = false,
+    ESP = false,
+    FOV = 200,
+    Range = math.huge,
+    ESPRange = 6000,
+    LockPart = "Head",
+    TeamCheckAimbot = true,
+    ESPTeamCheck = true,
+    AimYOffset = 0,
+    Prediction = 0.142,
+    SmoothClose = 0.62,
+    SmoothFar = 0.94,
+}
+
+--// STATE
+local targetPart = nil
+local ESP = {}
+local gui, panel, circle
+
+--// FIXED: create FOV circle ONCE
+local fovCircle = Drawing.new("Circle")
+fovCircle.Filled = false
+fovCircle.Thickness = 2
+fovCircle.Color = Color3.fromRGB(255, 255, 255)
+fovCircle.Visible = false
+
+--// UTILITIES
+local function getLockPart(char)
+    if not char then return nil end
+    return char:FindFirstChild(Settings.LockPart)
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("HumanoidRootPart")
+end
+
+local function isEnemyAimbot(plr)
+    if not Settings.TeamCheckAimbot then return true end
+    if not LocalPlayer.Team or not plr.Team then return true end
+    return LocalPlayer.Team ~= plr.Team
+end
+
+local function isEnemyESP(plr)
+    if not Settings.ESPTeamCheck then return true end
+    if not LocalPlayer.Team or not plr.Team then return true end
+    return LocalPlayer.Team ~= plr.Team
+end
+
+local function isVisible(part)
+    if not part or not LocalPlayer.Character then return false end
+    local origin = Camera.CFrame.Position
+    local direction = part.Position - origin
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    params.IgnoreWater = true
+    local result = Workspace:Raycast(origin, direction, params)
+    return not result or result.Instance:IsDescendantOf(part.Parent)
+end
+
+local function getTarget()
+    local closest, shortest = nil, math.huge
+    local center = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y * 0.5)
+
+    for _, plr in Players:GetPlayers() do
+        if plr == LocalPlayer or not plr.Character then continue end
+        local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        if not isEnemyAimbot(plr) then continue end
+
+        local part = getLockPart(plr.Character)
+        if not part then continue end
+
+        local distFromCam = (part.Position - Camera.CFrame.Position).Magnitude
+        if distFromCam > Settings.Range then continue end
+        if Settings.WallCheck and not isVisible(part) then continue end
+
+        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+        if dist > Settings.FOV or dist >= shortest then continue end
+
+        shortest = dist
+        closest = part
+    end
+    return closest
+end
+
+--// ESP
+local function makeESP(plr)
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Filled = false
+    box.Color = Color3.fromRGB(255, 0, 0)
+    box.Visible = false
+
+    local line = Drawing.new("Line")
+    line.Thickness = 2
+    line.Color = Color3.fromRGB(255, 0, 0)
+    line.Transparency = 0.7
+    line.Visible = false
+
+    ESP[plr] = {box = box, line = line}
+end
+
+local function cleanupESP(plr)
+    if ESP[plr] then
+        ESP[plr].box:Remove()
+        ESP[plr].line:Remove()
+        ESP[plr] = nil
+    end
+end
+
+for _, plr in Players:GetPlayers() do
+    if plr ~= LocalPlayer then makeESP(plr) end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    if plr ~= LocalPlayer then makeESP(plr) end
+end)
+
+Players.PlayerRemoving:Connect(cleanupESP)
+
+--// UI
+local function createUI()
+    if gui then gui:Destroy() end
+
+    gui = Instance.new("ScreenGui")
+    gui.Name = "UniversalAimbot"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 999999
+
+    -- 🔧 ONLY FIX: exploit-safe parenting
+    if gethui then
+        gui.Parent = gethui()
+    else
+        gui.Parent = game:GetService("CoreGui")
+    end
+
+    panel = Instance.new("Frame")
+    panel.Size = UDim2.new(0, 500, 0, 220)
+    panel.Position = UDim2.new(0.5, -250, 0.5, -110)
+    panel.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+    panel.Active = true
+    panel.Visible = false
+    panel.ZIndex = 999
+    panel.Parent = gui
+
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -10, 0, 30)
+    title.Position = UDim2.new(0, 5, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "UNIVERSAL AIMBOT"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.ZIndex = 1000
+    title.Parent = panel
+
+    local function btn(name, key, y)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0, 150, 0, 25)
+        b.Position = UDim2.new(0, 10, 0, y)
+        b.Text = name .. ": OFF"
+        b.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        b.TextColor3 = Color3.fromRGB(220, 220, 220)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 14
+        b.Parent = panel
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+
+        b.Activated:Connect(function()
+            Settings[key] = not Settings[key]
+            b.Text = name .. ": " .. (Settings[key] and "ON" or "OFF")
+            b.BackgroundColor3 = Settings[key] and Color3.fromRGB(0,170,0) or Color3.fromRGB(30,30,30)
+        end)
+    end
+
+    btn("Aimbot", "Aimbot", 40)
+    btn("Wall Check", "WallCheck", 70)
+    btn("ESP (360° Tracers)", "ESP", 100)
+    btn("Team Check Aimbot", "TeamCheckAimbot", 130)
+    btn("ESP Team Check", "ESPTeamCheck", 160)
+
+    circle = Instance.new("TextButton")
+    circle.Size = UDim2.new(0, 50, 0, 50)
+    circle.Position = UDim2.new(1, -60, 0, 40)
+    circle.BackgroundColor3 = Color3.fromRGB(200, 20, 20)
+    circle.Text = "O"
+    circle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    circle.Font = Enum.Font.GothamBold
+    circle.TextSize = 18
+    circle.ZIndex = 1000
+    circle.Parent = gui
+
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+
+    circle.MouseButton1Click:Connect(function()
+        panel.Visible = not panel.Visible
+        circle.Text = panel.Visible and "X" or "O"
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    createUI()
+end)
+
+createUI()
+
+--// MAIN LOOP
+RunService.Heartbeat:Connect(function()
+    targetPart = getTarget()
+
+    if Settings.Aimbot and targetPart then
+        local pos = targetPart.Position + Vector3.new(0, Settings.AimYOffset, 0)
+        local targetCF = CFrame.lookAt(Camera.CFrame.Position, pos)
+        Camera.CFrame = Camera.CFrame:Lerp(targetCF, Settings.SmoothClose)
+    end
+
+    fovCircle.Position = Camera.ViewportSize * 0.5
+    fovCircle.Radius = Settings.FOV
+    fovCircle.Visible = Settings.Aimbot
+end)
+
+print("UNIVERSAL AIMBOT LOADED – UI FIXED")
