@@ -1,0 +1,97 @@
+```lua
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Settings
+local Settings = {
+    AimbotEnabled = true,
+    FOV = 50,
+    FOVMax = 200,
+    Smoothness = 0.1,
+    ESPEnabled = true,
+    TeamCheck = true
+}
+
+-- UI Variables
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "SouthBronxUI"
+Gui.ResetOnSpawn = false
+Gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 300, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = Gui
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(1, 0)
+UICorner.Parent = MainFrame
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.Position = UDim2.new(1, -35, 0, 5)
+CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 20
+CloseButton.Parent = TopBar
+CloseButton.MouseButton1Click:Connect(function()
+    Gui:Destroy()
+end)
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, 0, 0, 40)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "SOUTH BRONX SCRIPT"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+TitleLabel.TextSize = 16
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Parent = TopBar
+
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, 0, 0, 360)
+ContentFrame.Position = UDim2.new(0, 0, 0, 40)
+ContentFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+ContentFrame.BorderSizePixel = 0
+ContentFrame.Parent = MainFrame
+
+-- Aimbot Toggle
+local AimbotToggle = Instance.new("TextButton")
+AimbotToggle.Size = UDim2.new(1, -20, 0, 40)
+AimbotToggle.Position = UDim2.new(0.1, 0, 0, 10)
+AimbotToggle.BackgroundColor3 = Color3.fromRGB(60, 100, 200)
+AimbotToggle.Text = "Aimbot: ON"
+AimbotToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+AimbotToggle.TextSize = 14
+AimbotToggle.Parent = ContentFrame
+AimbotToggle.MouseButton1Click:Connect(function()
+    Settings.AimbotEnabled = not Settings.AimbotEnabled
+    AimbotToggle.Text = "Aimbot: " .. (Settings.AimbotEnabled and "ON" or "OFF")
+    AimbotToggle.BackgroundColor3 = Settings.AimbotEnabled and Color3.fromRGB(60, 100, 200) or Color3.fromRGB(100, 100, 100)
+end)
+
+-- FOV Slider
+local FOVLabel = Instance.new("TextLabel")
+FOVLabel.Size = UDim2.new(1, 0, 0, 20)
+FOVLabel.Position = UDim2.new(0, 0, 0, 55)
+FOVLabel.BackgroundTransparency = 1
+FOVLabel.Text = "FOV: " .. tostring(Settings.FOV)
+FOVLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+FOVLabel.TextSize = 12
+FOVLabel.Parent = ContentFrame
+
+local FOV
