@@ -1,0 +1,191 @@
+--// Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+--// Settings
+local Settings = {
+    ESP_Enabled = true,
+    Aimbot_Enabled = false,
+    TeamCheck = true,
+    WallCheck = true,
+    Aimbot_FOV = 150,
+    Aimbot_Part = "Head", -- Head, HumanoidRootPart, etc.
+    Aimbot_Smoothness = 1, -- 1 = hard lock / instant
+    Offset_X = 0, -- Negative = left
+    Offset_Y = 0, -- Positive = up
+    Circle_Color = Color3.fromRGB(255, 255, 255),
+    Circle_Thickness = 1,
+    Circle_Transparency = 0.7,
+}
+
+--// Tables
+local Drawings = {}
+local Connections = {}
+
+--// Create FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = Settings.Circle_Thickness
+fovCircle.NumSides = 64
+fovCircle.Radius = Settings.Aimbot_FOV
+fovCircle.Color = Settings.Circle_Color
+fovCircle.Transparency = Settings.Circle_Transparency
+fovCircle.Filled = false
+fovCircle.Visible = true
+table.insert(Drawings, fovCircle)
+
+--// Simple Menu (Press Insert to toggle)
+local menuOpen = true
+local menuText = Drawing.new("Text")
+menuText.Size = 18
+menuText.Color = Color3.fromRGB(255, 255, 255)
+menuText.Position = Vector2.new(20, 50)
+menuText.Text = "Roblox ESP + Aimbot | INSERT to toggle"
+menuText.Visible = true
+
+-- Update menu visibility
+Connections[#Connections+1] = UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Insert then
+        menuOpen = not menuOpen
+        -- Toggle all drawings visibility here if needed
+    end
+end)
+
+--// ESP Function
+local function createESP(plr)
+    if plr == LocalPlayer then return end
+    
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Filled = false
+    box.Color = Color3.fromRGB(0, 255, 0)
+    box.Transparency = 1
+    box.Visible = false
+    
+    local name = Drawing.new("Text")
+    name.Size = 16
+    name.Color = Color3.fromRGB(255, 255, 255)
+    name.Center = true
+    name.Outline = true
+    name.Visible = false
+    
+    Drawings[plr] = {Box = box, Name = name}
+end
+
+--// Wall Check
+local function isVisible(targetPart)
+    if not Settings.WallCheck then return true end
+    local origin = Camera.CFrame.Position
+    local direction = (targetPart.Position - origin).Unit * (targetPart.Position - origin).Magnitude
+    local ray = Ray.new(origin, direction)
+    local hit, _ = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character, targetPart.Parent})
+    return not hit or hit:IsDescendantOf(targetPart.Parent)
+end
+
+--// Get Closest Player
+local function getClosestPlayer()
+    local closest = nil
+    local shortestDist = Settings.Aimbot_FOV
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr \~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            if Settings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+            
+            local part = plr.Character:FindFirstChild(Settings.Aimbot_Part)
+            if not part then continue end
+            
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if not onScreen then continue end
+            
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+            
+            if dist < shortestDist and isVisible(part) then
+                shortestDist = dist
+                closest = plr
+            end
+        end
+    end
+    return closest
+end
+
+--// Aimbot Loop (Hard Lock)
+Connections[#Connections+1] = RunService.RenderStepped:Connect(function()
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    fovCircle.Radius = Settings.Aimbot_FOV
+    
+    if not Settings.Aimbot_Enabled then return end
+    
+    local target = getClosestPlayer()
+    if target and target.Character then
+        local part = target.Character:FindFirstChild(Settings.Aimbot_Part)
+        if part then
+            local targetPos = Camera:WorldToScreenPoint(part.Position + Vector3.new(Settings.Offset_X, Settings.Offset_Y, 0))
+            local currentCFrame = Camera.CFrame
+            local targetCFrame = CFrame.lookAt(currentCFrame.Position, part.Position + Vector3.new(Settings.Offset_X, Settings.Offset_Y, 0))
+            
+            Camera.CFrame = currentCFrame:Lerp(targetCFrame, Settings.Aimbot_Smoothness) -- 1 = instant
+        end
+    end
+end)
+
+--// ESP Update Loop
+Connections[#Connections+1] = RunService.RenderStepped:Connect(function()
+    if not Settings.ESP_Enabled then return end
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer or not plr.Character then continue end
+        if Settings.TeamCheck and plr.Team == LocalPlayer.Team then 
+            if Drawings[plr] then
+                Drawings[plr].Box.Visible = false
+                Drawings[plr].Name.Visible = false
+            end
+            continue 
+        end
+        
+        local root = plr.Character:FindFirstChild("HumanoidRootPart")
+        local head = plr.Character:FindFirstChild("Head")
+        if not root or not head then continue end
+        
+        local rootPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+        if not onScreen then 
+            if Drawings[plr] then
+                Drawings[plr].Box.Visible = false
+                Drawings[plr].Name.Visible = false
+            end
+            continue 
+        end
+        
+        -- Box (simple 2D)
+        local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+        local legPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+        
+        local height = math.abs(headPos.Y - legPos.Y)
+        local width = height * 0.6
+        
+        if Drawings[plr] then
+            local box = Drawings[plr].Box
+            local name = Drawings[plr].Name
+            
+            box.Size = Vector2.new(width, height)
+            box.Position = Vector2.new(rootPos.X - width/2, headPos.Y)
+            box.Visible = true
+            
+            name.Text = plr.Name
+            name.Position = Vector2.new(rootPos.X, headPos.Y - 20)
+            name.Visible = true
+        end
+    end
+end)
+
+--// Create ESP for existing players
+for _, plr in ipairs(Players:GetPlayers()) do
+    createESP(plr)
+end
+Players.PlayerAdded:Connect(createESP)
+
+print("✅ Clean ESP + Hardlock Aimbot Loaded! (Press INSERT for menu)")
+
+--// Cleanup on script end (optional)
+game:GetService("CoreGui").ChildAdded:Connect(function() end) -- placeholder
