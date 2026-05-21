@@ -1,0 +1,223 @@
+--// Load Rayfield UI
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+--// Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+--// Settings
+local Settings = {
+    ESP_Enabled = true,
+    Aimbot_Enabled = false,
+    TeamCheck = true,
+    WallCheck = true,
+    Aimbot_FOV = 150,
+    Aimbot_Part = "Head",
+    Offset_X = 0,
+    Offset_Y = -2,     -- Positive = higher on screen
+    Smoothness = 1,    -- 1 = hard lock
+}
+
+local Drawings = {}
+local Connections = {}
+
+--// FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 2
+fovCircle.NumSides = 100
+fovCircle.Radius = Settings.Aimbot_FOV
+fovCircle.Color = Color3.fromRGB(255, 255, 255)
+fovCircle.Transparency = 0.8
+fovCircle.Filled = false
+fovCircle.Visible = true
+
+--// Create Window
+local Window = Rayfield:CreateWindow({
+    Name = "Clean ESP + Hardlock Aimbot",
+    LoadingTitle = "Loading...",
+    LoadingSubtitle = "by Grok",
+    ConfigurationSaving = { Enabled = false }
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+local VisualsTab = Window:CreateTab("Visuals", 4483362458)
+
+--// Toggles & Sliders
+MainTab:CreateToggle({
+    Name = "Aimbot Enabled",
+    CurrentValue = Settings.Aimbot_Enabled,
+    Callback = function(Value) Settings.Aimbot_Enabled = Value end
+})
+
+MainTab:CreateToggle({
+    Name = "ESP Enabled",
+    CurrentValue = Settings.ESP_Enabled,
+    Callback = function(Value) Settings.ESP_Enabled = Value end
+})
+
+MainTab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = Settings.TeamCheck,
+    Callback = function(Value) Settings.TeamCheck = Value end
+})
+
+MainTab:CreateToggle({
+    Name = "Wall Check",
+    CurrentValue = Settings.WallCheck,
+    Callback = function(Value) Settings.WallCheck = Value end
+})
+
+MainTab:CreateSlider({
+    Name = "Aimbot FOV",
+    Range = {50, 800},
+    Increment = 5,
+    CurrentValue = Settings.Aimbot_FOV,
+    Callback = function(Value)
+        Settings.Aimbot_FOV = Value
+    end
+})
+
+MainTab:CreateSlider({
+    Name = "X Offset (Left/Right)",
+    Range = {-50, 50},
+    Increment = 1,
+    CurrentValue = Settings.Offset_X,
+    Callback = function(Value) Settings.Offset_X = Value end
+})
+
+MainTab:CreateSlider({
+    Name = "Y Offset (Up/Down)",
+    Range = {-50, 50},
+    Increment = 1,
+    CurrentValue = Settings.Offset_Y,
+    Callback = function(Value) Settings.Offset_Y = Value end
+})
+
+MainTab:CreateDropdown({
+    Name = "Aim Part",
+    Options = {"Head", "HumanoidRootPart", "UpperTorso"},
+    CurrentOption = {Settings.Aimbot_Part},
+    Callback = function(Option) Settings.Aimbot_Part = Option[1] end
+})
+
+--// ESP Creation & Update (same as before)
+local function createESP(plr)
+    if plr == LocalPlayer then return end
+    local box = Drawing.new("Square")
+    box.Thickness = 2; box.Filled = false; box.Color = Color3.fromRGB(0, 255, 100); box.Transparency = 1; box.Visible = false
+    
+    local name = Drawing.new("Text")
+    name.Size = 16; name.Color = Color3.fromRGB(255,255,255); name.Center = true; name.Outline = true; name.Visible = false
+    
+    Drawings[plr] = {Box = box, Name = name}
+end
+
+local function isVisible(targetPart)
+    if not Settings.WallCheck then return true end
+    local origin = Camera.CFrame.Position
+    local direction = (targetPart.Position - origin)
+    local ray = Ray.new(origin, direction)
+    local hit = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character or {}, targetPart.Parent})
+    return hit == nil or hit:IsDescendantOf(targetPart.Parent)
+end
+
+local function getClosestPlayer()
+    local closest, shortest = nil, Settings.Aimbot_FOV
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer or not plr.Character then continue end
+        if Settings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+        
+        local part = plr.Character:FindFirstChild(Settings.Aimbot_Part)
+        if not part then continue end
+        if plr.Character.Humanoid.Health <= 0 then continue end
+        
+        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen then continue end
+        
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+        if dist < shortest and isVisible(part) then
+            shortest = dist
+            closest = plr
+        end
+    end
+    return closest
+end
+
+--// Main Loops
+Connections[#Connections+1] = RunService.RenderStepped:Connect(function()
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    fovCircle.Radius = Settings.Aimbot_FOV
+    fovCircle.Visible = Settings.Aimbot_Enabled
+    
+    if not Settings.Aimbot_Enabled then return end
+    
+    local target = getClosestPlayer()
+    if target and target.Character then
+        local part = target.Character:FindFirstChild(Settings.Aimbot_Part)
+        if part then
+            local targetPos = part.Position + Vector3.new(Settings.Offset_X, Settings.Offset_Y, 0)
+            local current = Camera.CFrame
+            local targetCFrame = CFrame.lookAt(current.Position, targetPos)
+            Camera.CFrame = current:Lerp(targetCFrame, Settings.Smoothness) -- 1 = hard lock
+        end
+    end
+end)
+
+-- ESP Loop (simplified clean box + name)
+Connections[#Connections+1] = RunService.RenderStepped:Connect(function()
+    if not Settings.ESP_Enabled then
+        for _, data in pairs(Drawings) do
+            data.Box.Visible = false
+            data.Name.Visible = false
+        end
+        return
+    end
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LocalPlayer or not plr.Character then continue end
+        if Settings.TeamCheck and plr.Team == LocalPlayer.Team then continue end
+        
+        local root = plr.Character:FindFirstChild("HumanoidRootPart")
+        local head = plr.Character:FindFirstChild("Head")
+        if not root or not head then continue end
+        
+        local rootPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+        if not onScreen then
+            if Drawings[plr] then
+                Drawings[plr].Box.Visible = false
+                Drawings[plr].Name.Visible = false
+            end
+            continue
+        end
+        
+        if Drawings[plr] then
+            local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
+            local height = math.abs(headPos.Y - Camera:WorldToViewportPoint(root.Position - Vector3.new(0,3,0)).Y)
+            local width = height * 0.6
+            
+            local box = Drawings[plr].Box
+            local name = Drawings[plr].Name
+            
+            box.Size = Vector2.new(width, height)
+            box.Position = Vector2.new(rootPos.X - width/2, headPos.Y)
+            box.Visible = true
+            
+            name.Text = plr.Name .. " [" .. math.floor((root.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) .. "m]"
+            name.Position = Vector2.new(rootPos.X, headPos.Y - 18)
+            name.Visible = true
+        end
+    end
+end)
+
+-- Create ESP for current players
+for _, plr in ipairs(Players:GetPlayers()) do createESP(plr) end
+Players.PlayerAdded:Connect(createESP)
+
+Rayfield:Notify({
+    Title = "Loaded Successfully",
+    Content = "Press Right Shift to open the menu",
+    Duration = 5,
+    Image = 4483362458,
+})
