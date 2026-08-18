@@ -1,0 +1,296 @@
+-- // Universal Safe Execution Pipeline
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+
+-- // Settings
+local Settings = {
+    Aimbot = { Enabled = false, WallCheck = false, TeamCheck = false, Radius = 120 },
+    ESP = { Boxes = false, Tracers = false, TeamCheck = false }
+}
+
+-- // Robust Core/Parent Mounting
+local function GetSafeParent()
+    local success, res = pcall(function()
+        if gethui then return gethui() end
+        if game:GetService("CoreGui") and pcall(function() return game:GetService("CoreGui").Name end) then
+            return game:GetService("CoreGui")
+        end
+        return LocalPlayer:WaitForChild("PlayerGui", 5)
+    end)
+    if success and res then return res end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- ScreenGui Parent Container
+local SafeGui = Instance.new("ScreenGui")
+SafeGui.Name = "CheatOverlay_" .. tostring(math.random(100000, 999999))
+SafeGui.ResetOnSpawn = false
+SafeGui.DisplayOrder = 999
+SafeGui.IgnoreGuiInset = true
+SafeGui.Parent = GetSafeParent()
+
+-- ==========================================
+-- 1. DRAGGABLE FLOATING TOGGLE
+-- ==========================================
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleCircle"
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Text = "MENU"
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 11
+ToggleBtn.Active = true
+ToggleBtn.Parent = SafeGui
+
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+local Stroke = Instance.new("UIStroke", ToggleBtn)
+Stroke.Color = Color3.fromRGB(0, 255, 150)
+Stroke.Thickness = 2
+
+-- Drag Logic
+local dragging, dragStart, startPos
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ToggleBtn.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        ToggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- ==========================================
+-- 2. MAIN GUI WINDOW
+-- ==========================================
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 320, 0, 240)
+MainFrame.Position = UDim2.new(0.5, -160, 0.5, -120)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Visible = true
+MainFrame.Parent = SafeGui
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+local FrameStroke = Instance.new("UIStroke", MainFrame)
+FrameStroke.Color = Color3.fromRGB(40, 40, 45)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Text = " UNIVERSAL CHEAT V3"
+Title.TextColor3 = Color3.fromRGB(0, 255, 150)
+Title.TextSize = 13
+Title.Font = Enum.Font.GothamBold
+Title.BackgroundTransparency = 1
+
+local Container = Instance.new("Frame", MainFrame)
+Container.Size = UDim2.new(1, -20, 1, -40)
+Container.Position = UDim2.new(0, 10, 0, 35)
+Container.BackgroundTransparency = 1
+
+local ListLayout = Instance.new("UIListLayout", Container)
+ListLayout.Padding = UDim.new(0, 5)
+
+local function MakeToggle(text, default, callback)
+    local Btn = Instance.new("TextButton", Container)
+    Btn.Size = UDim2.new(1, 0, 0, 32)
+    Btn.BackgroundColor3 = default and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(30, 30, 35)
+    Btn.Text = text .. " [" .. (default and "ON" or "OFF") .. "]"
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.GothamSemibold
+    Btn.TextSize = 11
+
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 5)
+
+    local state = default
+    Btn.MouseButton1Click:Connect(function()
+        state = not state
+        Btn.BackgroundColor3 = state and Color3.fromRGB(0, 180, 100) or Color3.fromRGB(30, 30, 35)
+        Btn.Text = text .. " [" .. (state and "ON" or "OFF") .. "]"
+        callback(state)
+    end)
+end
+
+MakeToggle("Aimbot", Settings.Aimbot.Enabled, function(v) Settings.Aimbot.Enabled = v end)
+MakeToggle("Wall Check", Settings.Aimbot.WallCheck, function(v) Settings.Aimbot.WallCheck = v end)
+MakeToggle("ESP Boxes", Settings.ESP.Boxes, function(v) Settings.ESP.Boxes = v end)
+MakeToggle("ESP Tracers", Settings.ESP.Tracers, function(v) Settings.ESP.Tracers = v end)
+MakeToggle("Team Check", Settings.Aimbot.TeamCheck, function(v) 
+    Settings.Aimbot.TeamCheck = v 
+    Settings.ESP.TeamCheck = v 
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- ==========================================
+-- 3. FOV CIRCLE & TARGET SCANNER
+-- ==========================================
+local FOVCircle = Instance.new("Frame", SafeGui)
+FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVCircle.BackgroundTransparency = 1
+FOVCircle.Visible = true
+Instance.new("UICorner", FOVCircle).CornerRadius = UDim.new(1, 0)
+local CircleStroke = Instance.new("UIStroke", FOVCircle)
+CircleStroke.Color = Color3.fromRGB(0, 255, 150)
+CircleStroke.Thickness = 1
+
+local function GetChar(player)
+    return player.Character or workspace:FindFirstChild(player.Name)
+end
+
+local function GetTargetPart(char)
+    if not char then return nil end
+    return char:FindFirstChild("Head") 
+        or char:FindFirstChild("HumanoidRootPart") 
+        or char:FindFirstChild("Torso") 
+        or char:FindFirstChild("Hitbox")
+        or char:FindFirstChildWhichIsA("BasePart")
+end
+
+local function IsVisible(part, char)
+    local LocalChar = GetChar(LocalPlayer)
+    local RayParams = RaycastParams.new()
+    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+    RayParams.FilterDescendantsInstances = {LocalChar, Camera, char}
+    RayParams.IgnoreWater = true
+    return workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position), RayParams) == nil
+end
+
+local function GetTarget()
+    local Closest, Shortest = nil, Settings.Aimbot.Radius
+    local viewport = Camera.ViewportSize
+    if viewport.X <= 0 or viewport.Y <= 0 then return nil end
+    local Center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            if not Settings.Aimbot.TeamCheck or (player.Team ~= LocalPlayer.Team) then
+                local char = GetChar(player)
+                local part = GetTargetPart(char)
+                if part then
+                    if not Settings.Aimbot.WallCheck or IsVisible(part, char) then
+                        local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                        if onScreen then
+                            local dist = (Vector2.new(pos.X, pos.Y) - Center).Magnitude
+                            if dist < Shortest then
+                                Shortest = dist
+                                Closest = part
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return Closest
+end
+
+-- ==========================================
+-- 4. ESP RENDER PIPELINE
+-- ==========================================
+local ESPCache = {}
+
+local function CreateDrawings(player)
+    if ESPCache[player] then return end
+
+    local Box = Instance.new("Frame", SafeGui)
+    Box.BackgroundTransparency = 1
+    Box.Visible = false
+    local Stroke = Instance.new("UIStroke", Box)
+    Stroke.Color = Color3.fromRGB(255, 50, 50)
+    Stroke.Thickness = 1
+
+    local Tracer = Instance.new("Frame", SafeGui)
+    Tracer.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    Tracer.BorderSizePixel = 0
+    Tracer.AnchorPoint = Vector2.new(0.5, 0.5)
+    Tracer.Visible = false
+
+    ESPCache[player] = { Box = Box, Tracer = Tracer }
+end
+
+for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then CreateDrawings(p) end end
+Players.PlayerAdded:Connect(CreateDrawings)
+Players.PlayerRemoving:Connect(function(p)
+    if ESPCache[p] then
+        pcall(function() ESPCache[p].Box:Destroy() end)
+        pcall(function() ESPCache[p].Tracer:Destroy() end)
+        ESPCache[p] = nil
+    end
+end)
+
+-- Main Loop
+pcall(function() RunService:UnbindFromRenderStep("UniversalScriptLoop") end)
+RunService:BindToRenderStep("UniversalScriptLoop", Enum.RenderPriority.Camera.Value + 1, function()
+    local viewport = Camera.ViewportSize
+    if viewport.X <= 0 or viewport.Y <= 0 then return end
+    
+    local Center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+    
+    FOVCircle.Position = UDim2.new(0, Center.X, 0, Center.Y)
+    FOVCircle.Size = UDim2.new(0, Settings.Aimbot.Radius * 2, 0, Settings.Aimbot.Radius * 2)
+
+    -- Aimlock
+    if Settings.Aimbot.Enabled then
+        local target = GetTarget()
+        if target then
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+        end
+    end
+
+    -- ESP Rendering
+    for player, drawings in pairs(ESPCache) do
+        local Char = GetChar(player)
+        local Valid = Char and Char.Parent and (not Settings.ESP.TeamCheck or player.Team ~= LocalPlayer.Team)
+        
+        if Valid then
+            local part = GetTargetPart(Char)
+            if part then
+                local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local size = Char:ExtentsSize()
+                    local topPos = Camera:WorldToViewportPoint((part.CFrame * CFrame.new(0, size.Y / 2, 0)).Position)
+                    local botPos = Camera:WorldToViewportPoint((part.CFrame * CFrame.new(0, -size.Y / 2, 0)).Position)
+
+                    local h = math.abs(topPos.Y - botPos.Y)
+                    local w = h * 0.6
+
+                    if Settings.ESP.Boxes then
+                        drawings.Box.Size = UDim2.new(0, w, 0, h)
+                        drawings.Box.Position = UDim2.new(0, pos.X - w / 2, 0, pos.Y - h / 2)
+                        drawings.Box.Visible = true
+                    else drawings.Box.Visible = false end
+
+                    if Settings.ESP.Tracers then
+                        local start = Vector2.new(Center.X, viewport.Y)
+                        local targetVec = Vector2.new(pos.X, pos.Y)
+                        local dist = (targetVec - start).Magnitude
+                        
+                        if dist > 1 then
+                            drawings.Tracer.Size = UDim2.new(0, dist, 0, 1)
+                            drawings.Tracer.Position = UDim2.new(0, (start.X + targetVec.X) / 2, 0, (start.Y + targetVec.Y) / 2)
+                            drawings.Tracer.Rotation = math.deg(math.atan2(targetVec.Y - start.Y, targetVec.X - start.X))
+                            drawings.Tracer.Visible = true
+                        else drawings.Tracer.Visible = false end
+                    else drawings.Tracer.Visible = false end
+                else drawings.Box.Visible = false drawings.Tracer.Visible = false end
+            else drawings.Box.Visible = false drawings.Tracer.Visible = false end
+        else drawings.Box.Visible = false drawings.Tracer.Visible = false end
+    end
+end)
