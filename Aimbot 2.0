@@ -1,0 +1,413 @@
+-- // Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- // Settings
+local Settings = {
+    Aimlock = { Enabled = false, WallCheck = false, TeamCheck = false },
+    FOV = { Enabled = false, Radius = 120 },
+    ESP = { Boxes = false, Tracers = false, TeamCheck = false }
+}
+
+-- // UI Mounting
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = tostring(math.random(1000000, 9999999))
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true 
+
+local function MountUI()
+    if gethui then
+        local success, res = pcall(gethui)
+        if success and res then return res end
+    end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+ScreenGui.Parent = MountUI()
+
+-- ==========================================
+-- 1. TOGGLE BUTTON
+-- ==========================================
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleCircle"
+ToggleBtn.Size = UDim2.new(0, 55, 0, 55)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+ToggleBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+ToggleBtn.Text = "Close"
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 13
+ToggleBtn.Active = true
+ToggleBtn.Parent = ScreenGui
+
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+local BtnStroke = Instance.new("UIStroke", ToggleBtn)
+BtnStroke.Color = Color3.fromRGB(60, 60, 60)
+BtnStroke.Thickness = 1
+
+local dragging, dragInput, dragStart, startPos
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ToggleBtn.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+ToggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        ToggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- ==========================================
+-- 2. MAIN GUI WINDOW
+-- ==========================================
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 420, 0, 280)
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -140)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+local MainStroke = Instance.new("UIStroke", MainFrame)
+MainStroke.Color = Color3.fromRGB(35, 35, 40)
+MainStroke.Thickness = 1
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, -20, 0, 35)
+Title.Position = UDim2.new(0, 15, 0, 5)
+Title.Text = "Universal Aimbot (Custom Rig Fix)"
+Title.TextColor3 = Color3.fromRGB(220, 220, 220)
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.BackgroundTransparency = 1
+
+local Sidebar = Instance.new("Frame", MainFrame)
+Sidebar.Size = UDim2.new(0, 110, 1, -45)
+Sidebar.Position = UDim2.new(0, 10, 0, 40)
+Sidebar.BackgroundTransparency = 1
+
+local SidebarLayout = Instance.new("UIListLayout", Sidebar)
+SidebarLayout.Padding = UDim.new(0, 8)
+
+local ContentArea = Instance.new("Frame", MainFrame)
+ContentArea.Size = UDim2.new(1, -140, 1, -45)
+ContentArea.Position = UDim2.new(0, 130, 0, 40)
+ContentArea.BackgroundTransparency = 1
+
+local Pages = {}
+local function CreatePage(name)
+    local Page = Instance.new("Frame", ContentArea)
+    Page.Name = name .. "Page"
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.Visible = false
+
+    local PageLayout = Instance.new("UIListLayout", Page)
+    PageLayout.Padding = UDim.new(0, 6)
+    
+    Pages[name] = Page
+    return Page
+end
+
+local CombatPage = CreatePage("Combat")
+local VisualsPage = CreatePage("Visuals")
+
+local function SelectTab(tabName)
+    for name, page in pairs(Pages) do
+        page.Visible = (name == tabName)
+    end
+end
+
+local function CreateTabButton(name)
+    local Btn = Instance.new("TextButton", Sidebar)
+    Btn.Size = UDim2.new(1, 0, 0, 32)
+    Btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    Btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Btn.Text = name
+    Btn.Font = Enum.Font.GothamSemibold
+    Btn.TextSize = 12
+
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
+    Btn.MouseButton1Click:Connect(function() SelectTab(name) end)
+end
+
+CreateTabButton("Combat")
+CreateTabButton("Visuals")
+
+local function CreateToggle(parent, name, defaultState, callback)
+    local Btn = Instance.new("TextButton", parent)
+    Btn.Size = UDim2.new(1, -10, 0, 30)
+    Btn.BackgroundColor3 = defaultState and Color3.fromRGB(220, 220, 220) or Color3.fromRGB(25, 25, 30)
+    Btn.Text = name .. ": " .. (defaultState and "ON" or "OFF")
+    Btn.TextColor3 = defaultState and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(180, 180, 180)
+    Btn.Font = Enum.Font.GothamSemibold
+    Btn.TextSize = 11
+
+    Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 6)
+
+    local state = defaultState
+    Btn.MouseButton1Click:Connect(function()
+        state = not state
+        Btn.BackgroundColor3 = state and Color3.fromRGB(220, 220, 220) or Color3.fromRGB(25, 25, 30)
+        Btn.TextColor3 = state and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(180, 180, 180)
+        Btn.Text = name .. ": " .. (state and "ON" or "OFF")
+        callback(state)
+    end)
+end
+
+CreateToggle(CombatPage, "Aimbot", Settings.Aimlock.Enabled, function(v) Settings.Aimlock.Enabled = v end)
+CreateToggle(CombatPage, "Wall Check", Settings.Aimlock.WallCheck, function(v) Settings.Aimlock.WallCheck = v end)
+CreateToggle(CombatPage, "Team Check", Settings.Aimlock.TeamCheck, function(v) Settings.Aimlock.TeamCheck = v end)
+
+local FOVFrame = Instance.new("Frame", CombatPage)
+FOVFrame.Size = UDim2.new(1, -10, 0, 50)
+FOVFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Instance.new("UICorner", FOVFrame).CornerRadius = UDim.new(0, 6)
+
+local FOVLabel = Instance.new("TextLabel", FOVFrame)
+FOVLabel.Size = UDim2.new(1, 0, 0, 20)
+FOVLabel.Text = "FOV Radius: " .. Settings.FOV.Radius
+FOVLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+FOVLabel.Font = Enum.Font.GothamSemibold
+FOVLabel.TextSize = 11
+FOVLabel.BackgroundTransparency = 1
+
+local MinusBtn = Instance.new("TextButton", FOVFrame)
+MinusBtn.Size = UDim2.new(0.45, 0, 0, 22)
+MinusBtn.Position = UDim2.new(0.03, 0, 0.45, 0)
+MinusBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+MinusBtn.Text = "-10 FOV"
+MinusBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+MinusBtn.Font = Enum.Font.GothamBold
+MinusBtn.TextSize = 10
+Instance.new("UICorner", MinusBtn).CornerRadius = UDim.new(0, 4)
+
+local PlusBtn = Instance.new("TextButton", FOVFrame)
+PlusBtn.Size = UDim2.new(0.45, 0, 0, 22)
+PlusBtn.Position = UDim2.new(0.52, 0, 0.45, 0)
+PlusBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+PlusBtn.Text = "+10 FOV"
+PlusBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+PlusBtn.Font = Enum.Font.GothamBold
+PlusBtn.TextSize = 10
+Instance.new("UICorner", PlusBtn).CornerRadius = UDim.new(0, 4)
+
+MinusBtn.MouseButton1Click:Connect(function()
+    Settings.FOV.Radius = math.max(10, Settings.FOV.Radius - 10)
+    FOVLabel.Text = "FOV Radius: " .. Settings.FOV.Radius
+end)
+
+PlusBtn.MouseButton1Click:Connect(function()
+    Settings.FOV.Radius = Settings.FOV.Radius + 10
+    FOVLabel.Text = "FOV Radius: " .. Settings.FOV.Radius
+end)
+
+CreateToggle(VisualsPage, "Draw FOV Circle", Settings.FOV.Enabled, function(v) Settings.FOV.Enabled = v end)
+CreateToggle(VisualsPage, "ESP Boxes", Settings.ESP.Boxes, function(v) Settings.ESP.Boxes = v end)
+CreateToggle(VisualsPage, "ESP Tracers", Settings.ESP.Tracers, function(v) Settings.ESP.Tracers = v end)
+CreateToggle(VisualsPage, "ESP Team Check", Settings.ESP.TeamCheck, function(v) Settings.ESP.TeamCheck = v end)
+
+SelectTab("Combat")
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+    ToggleBtn.Text = MainFrame.Visible and "Close" or "Open"
+end)
+
+-- ==========================================
+-- 3. ADVANCED CUSTOM CHARACTER DETECTOR
+-- ==========================================
+local FOVCircle = Instance.new("Frame", ScreenGui)
+FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVCircle.BackgroundTransparency = 1
+FOVCircle.Visible = false
+Instance.new("UICorner", FOVCircle).CornerRadius = UDim.new(1, 0)
+
+local CircleStroke = Instance.new("UIStroke", FOVCircle)
+CircleStroke.Color = Color3.fromRGB(255, 255, 255)
+CircleStroke.Thickness = 1
+
+local function IsTeammate(player)
+    return player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team
+end
+
+-- Searches for valid aim targets inside custom rigs
+local function GetTargetPart(character)
+    if not character then return nil end
+    
+    -- Check common custom FPS game part names
+    local Target = character:FindFirstChild("Head") 
+        or character:FindFirstChild("Hitbox") 
+        or character:FindFirstChild("HumanoidRootPart") 
+        or character:FindFirstChild("Torso") 
+        or character:FindFirstChild("UpperTorso")
+        
+    if Target and Target:IsA("BasePart") then return Target end
+
+    -- Fallback: Scan model for the primary BasePart
+    for _, child in ipairs(character:GetChildren()) do
+        if child:IsA("BasePart") and not child.Name:lower():find("gun") and not child.Name:lower():find("weapon") then
+            return child
+        end
+    end
+    return nil
+end
+
+local function IsVisible(part, character)
+    local LocalChar = LocalPlayer.Character
+    local RayParams = RaycastParams.new()
+    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+    RayParams.FilterDescendantsInstances = {LocalChar, Camera, character}
+    RayParams.IgnoreWater = true
+    
+    local RayResult = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position), RayParams)
+    return RayResult == nil
+end
+
+local function GetClosestTarget()
+    local Closest, Shortest = nil, Settings.FOV.Radius
+    local viewport = Camera.ViewportSize
+    if viewport.X <= 0 or viewport.Y <= 0 then return nil end
+    local ScreenCenter = Vector2.new(viewport.X / 2, viewport.Y / 2)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char.Parent then
+                if not Settings.Aimlock.TeamCheck or not IsTeammate(player) then
+                    local Part = GetTargetPart(char)
+                    if Part then
+                        if not Settings.Aimlock.WallCheck or IsVisible(Part, char) then
+                            local ScreenPos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+                            if OnScreen then
+                                local Dist = (Vector2.new(ScreenPos.X, ScreenPos.Y) - ScreenCenter).Magnitude
+                                if Dist < Shortest then
+                                    Shortest = Dist
+                                    Closest = Part
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return Closest
+end
+
+local ESPCache = {}
+local function CreateESP(player)
+    if ESPCache[player] then
+        pcall(function() ESPCache[player].Box:Destroy() end)
+        pcall(function() ESPCache[player].Tracer:Destroy() end)
+    end
+
+    local Box = Instance.new("Frame", ScreenGui)
+    Box.BackgroundTransparency = 1
+    Box.Visible = false
+    local Stroke = Instance.new("UIStroke", Box)
+    Stroke.Color = Color3.fromRGB(255, 255, 255)
+    Stroke.Thickness = 1
+
+    local Tracer = Instance.new("Frame", ScreenGui)
+    Tracer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Tracer.BorderSizePixel = 0
+    Tracer.AnchorPoint = Vector2.new(0.5, 0.5)
+    Tracer.Visible = false
+
+    ESPCache[player] = { Box = Box, Tracer = Tracer }
+end
+
+for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then CreateESP(p) end end
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(function(p) 
+    if ESPCache[p] then 
+        pcall(function() ESPCache[p].Box:Destroy() end) 
+        pcall(function() ESPCache[p].Tracer:Destroy() end) 
+        ESPCache[p] = nil 
+    end 
+end)
+
+-- Render Loop
+RunService:BindToRenderStep("AimbotESP", Enum.RenderPriority.Camera.Value + 1, function()
+    local viewport = Camera.ViewportSize
+    if viewport.X <= 0 or viewport.Y <= 0 then return end
+    
+    local ScreenCenter = Vector2.new(viewport.X / 2, viewport.Y / 2)
+    
+    FOVCircle.Position = UDim2.new(0, ScreenCenter.X, 0, ScreenCenter.Y)
+    FOVCircle.Size = UDim2.new(0, Settings.FOV.Radius * 2, 0, Settings.FOV.Radius * 2)
+    FOVCircle.Visible = Settings.FOV.Enabled
+
+    -- Instant Lock
+    if Settings.Aimlock.Enabled then
+        local target = GetClosestTarget()
+        if target then
+            Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+        end
+    end
+
+    -- Dynamic Custom Rig ESP
+    for player, drawings in pairs(ESPCache) do
+        local Char = player.Character
+        local Valid = Char and Char.Parent and (not Settings.ESP.TeamCheck or not IsTeammate(player))
+        
+        if Valid then
+            -- Fetch actual model 3D space bounding box
+            local success, cf, size = pcall(function() return Char:GetBoundingBox() end)
+            
+            if success and cf then
+                local Pos, OnScreen = Camera:WorldToViewportPoint(cf.Position)
+
+                if OnScreen then
+                    local TopPos = Camera:WorldToViewportPoint((cf + Vector3.new(0, size.Y / 2, 0)).Position)
+                    local BottomPos = Camera:WorldToViewportPoint((cf - Vector3.new(0, size.Y / 2, 0)).Position)
+
+                    local Height = math.abs(TopPos.Y - BottomPos.Y)
+                    local Width = Height * 0.65
+
+                    if Settings.ESP.Boxes then
+                        drawings.Box.Size = UDim2.new(0, Width, 0, Height)
+                        drawings.Box.Position = UDim2.new(0, Pos.X - Width / 2, 0, Pos.Y - Height / 2)
+                        drawings.Box.Visible = true
+                    else drawings.Box.Visible = false end
+
+                    if Settings.ESP.Tracers then
+                        local Start = Vector2.new(ScreenCenter.X, viewport.Y)
+                        local End = Vector2.new(Pos.X, BottomPos.Y)
+                        local dist = (End - Start).Magnitude
+                        if dist > 0 then
+                            drawings.Tracer.Size = UDim2.new(0, dist, 0, 1)
+                            drawings.Tracer.Position = UDim2.new(0, (Start.X + End.X) / 2, 0, (Start.Y + End.Y) / 2)
+                            drawings.Tracer.Rotation = math.deg(math.atan2(End.Y - Start.Y, End.X - Start.X))
+                            drawings.Tracer.Visible = true
+                        else drawings.Tracer.Visible = false end
+                    else drawings.Tracer.Visible = false end
+                else drawings.Box.Visible = false drawings.Tracer.Visible = false end
+            else drawings.Box.Visible = false drawings.Tracer.Visible = false end
+        else drawings.Box.Visible = false drawings.Tracer.Visible = false end
+    end
+end)
