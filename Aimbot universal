@@ -1,0 +1,306 @@
+-- // Services & Local Player
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- // Feature Settings
+local Settings = {
+    Aimlock = { 
+        Enabled = false, 
+        LockPart = "Head", 
+        Smoothness = 1.0, -- Hard Lock
+        YOffset = 0,
+        WallCheck = false,
+        TeamCheck = false
+    },
+    FOV = { Enabled = false, Radius = 120 },
+    ESP = { Boxes = false, Tracers = false, TeamCheck = false }
+}
+
+-- // Stealth UI Container Setup
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = tostring(math.random(1000000, 9999999))
+ScreenGui.ResetOnSpawn = false
+
+local SafeParent = (gethui and gethui()) or game:GetService("CoreGui")
+ScreenGui.Parent = SafeParent
+
+-- // Center-Locked White FOV Circle
+local FOVFrame = Instance.new("Frame", ScreenGui)
+FOVFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+FOVFrame.Size = UDim2.new(0, Settings.FOV.Radius * 2, 0, Settings.FOV.Radius * 2)
+FOVFrame.BackgroundTransparency = 1
+FOVFrame.Visible = false
+
+local FOVCorner = Instance.new("UICorner", FOVFrame)
+FOVCorner.CornerRadius = UDim.new(1, 0)
+
+local FOVStroke = Instance.new("UIStroke", FOVFrame)
+FOVStroke.Color = Color3.fromRGB(255, 255, 255)
+FOVStroke.Thickness = 1.5
+
+-- // Raycast Line-of-Sight Check
+local function IsVisible(part)
+    local Character = LocalPlayer.Character
+    if not Character then return false end
+
+    local RayParams = RaycastParams.new()
+    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+    RayParams.FilterDescendantsInstances = {Character, Camera}
+    RayParams.IgnoreWater = true
+
+    local RayResult = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position), RayParams)
+    return RayResult == nil or RayResult.Instance:IsDescendantOf(part.Parent)
+end
+
+-- // Team Check Helper
+local function IsTeammate(player)
+    if player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+        return true
+    end
+    return false
+end
+
+-- // Target Acquisition
+local Target = nil
+
+local function GetClosestPlayerToCenter()
+    local Closest = nil
+    local ShortestDistance = Settings.FOV.Radius
+    local ScreenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(Settings.Aimlock.LockPart) then
+            
+            -- Apply Aimbot Team Check
+            if not Settings.Aimlock.TeamCheck or not IsTeammate(player) then
+                local Part = player.Character[Settings.Aimlock.LockPart]
+                
+                -- Apply Aimbot Wall Check
+                if not Settings.Aimlock.WallCheck or IsVisible(Part) then
+                    local ScreenPos, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+
+                    if OnScreen then
+                        local ScreenPosVector = Vector2.new(ScreenPos.X, ScreenPos.Y)
+                        local Distance = (ScreenPosVector - ScreenCenter).Magnitude
+
+                        if Distance < ShortestDistance then
+                            ShortestDistance = Distance
+                            Closest = Part
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return Closest
+end
+
+-- // ESP Cache
+local ESPCache = {}
+
+local function CreateESP(player)
+    local BoxFrame = Instance.new("Frame", ScreenGui)
+    BoxFrame.BackgroundTransparency = 1
+    BoxFrame.Visible = false
+
+    local BoxStroke = Instance.new("UIStroke", BoxFrame)
+    BoxStroke.Color = Color3.fromRGB(255, 255, 255)
+    BoxStroke.Thickness = 1.5
+
+    local TracerFrame = Instance.new("Frame", ScreenGui)
+    TracerFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    TracerFrame.BorderSizePixel = 0
+    TracerFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    TracerFrame.Visible = false
+
+    ESPCache[player] = { Box = BoxFrame, Tracer = TracerFrame }
+end
+
+local function RemoveESP(player)
+    if ESPCache[player] then
+        ESPCache[player].Box:Destroy()
+        ESPCache[player].Tracer:Destroy()
+        ESPCache[player] = nil
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then CreateESP(player) end
+end
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(RemoveESP)
+
+-- // Render Loop
+RunService.RenderStepped:Connect(function()
+    local CenterX = Camera.ViewportSize.X / 2
+    local CenterY = Camera.ViewportSize.Y / 2
+
+    FOVFrame.Size = UDim2.new(0, Settings.FOV.Radius * 2, 0, Settings.FOV.Radius * 2)
+    FOVFrame.Visible = Settings.FOV.Enabled
+
+    -- Hard Lock Aimlock Loop
+    if Settings.Aimlock.Enabled then
+        Target = GetClosestPlayerToCenter()
+        if Target and Target.Parent and Target.Parent:FindFirstChild("Humanoid") and Target.Parent.Humanoid.Health > 0 then
+            local TargetPos = Target.Position + Vector3.new(0, Settings.Aimlock.YOffset, 0)
+            local CameraPos = Camera.CFrame.Position
+            
+            Camera.CFrame = CFrame.new(CameraPos, TargetPos)
+        end
+    end
+
+    -- ESP Rendering Loop
+    for player, drawings in pairs(ESPCache) do
+        local ShouldShowESP = player.Character 
+            and player.Character:FindFirstChild("HumanoidRootPart") 
+            and player.Character:FindFirstChild("Humanoid") 
+            and player.Character.Humanoid.Health > 0
+            and (not Settings.ESP.TeamCheck or not IsTeammate(player))
+
+        if ShouldShowESP then
+            local Root = player.Character.HumanoidRootPart
+            local Pos, OnScreen = Camera:WorldToViewportPoint(Root.Position)
+
+            if OnScreen then
+                local Head = player.Character:FindFirstChild("Head")
+                local HeadPos = Head and Head.Position or (Root.Position + Vector3.new(0, 3, 0))
+                local HeadScreen = Camera:WorldToViewportPoint(HeadPos + Vector3.new(0, 0.5, 0))
+                local LegScreen = Camera:WorldToViewportPoint(Root.Position - Vector3.new(0, 3, 0))
+
+                local Height = math.abs(HeadScreen.Y - LegScreen.Y)
+                local Width = Height * 0.65
+
+                if Settings.ESP.Boxes then
+                    drawings.Box.Size = UDim2.new(0, Width, 0, Height)
+                    drawings.Box.Position = UDim2.new(0, Pos.X - Width / 2, 0, Pos.Y - Height / 2)
+                    drawings.Box.Visible = true
+                else
+                    drawings.Box.Visible = false
+                end
+
+                if Settings.ESP.Tracers then
+                    local StartPos = Vector2.new(CenterX, Camera.ViewportSize.Y)
+                    local EndPos = Vector2.new(Pos.X, Pos.Y)
+                    local Distance = (EndPos - StartPos).Magnitude
+                    local Angle = math.atan2(EndPos.Y - StartPos.Y, EndPos.X - StartPos.X)
+
+                    drawings.Tracer.Size = UDim2.new(0, Distance, 0, 1.5)
+                    drawings.Tracer.Position = UDim2.new(0, (StartPos.X + EndPos.X) / 2, 0, (StartPos.Y + EndPos.Y) / 2)
+                    drawings.Tracer.Rotation = math.deg(Angle)
+                    drawings.Tracer.Visible = true
+                else
+                    drawings.Tracer.Visible = false
+                end
+            else
+                drawings.Box.Visible = false
+                drawings.Tracer.Visible = false
+            end
+        else
+            drawings.Box.Visible = false
+            drawings.Tracer.Visible = false
+        end
+    end
+end)
+
+-- // UI Menu Construction
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Name = tostring(math.random(1000000, 9999999))
+MainFrame.Size = UDim2.new(0, 200, 0, 440) -- Expanded frame for extra toggles
+MainFrame.Position = UDim2.new(0.05, 0, 0.15, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local UICorner = Instance.new("UICorner", MainFrame)
+UICorner.CornerRadius = UDim.new(0, 10)
+
+local UIStroke = Instance.new("UIStroke", MainFrame)
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Thickness = 1.5
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.Text = "DARK ENGINE"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamBold
+Title.BackgroundTransparency = 1
+
+local Container = Instance.new("UIListLayout", MainFrame)
+Container.HorizontalAlignment = Enum.HorizontalAlignment.Center
+Container.Padding = UDim.new(0, 5)
+Container.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Custom Button Creator
+local function CreateToggle(name, defaultState, callback)
+    local Button = Instance.new("TextButton", MainFrame)
+    Button.Size = UDim2.new(0, 170, 0, 28)
+    Button.BackgroundColor3 = defaultState and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(15, 15, 15)
+    Button.Text = name .. ": " .. (defaultState and "ON" or "OFF")
+    Button.TextColor3 = defaultState and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(200, 200, 200)
+    Button.Font = Enum.Font.GothamSemibold
+    Button.TextSize = 10
+
+    local BtnCorner = Instance.new("UICorner", Button)
+    BtnCorner.CornerRadius = UDim.new(0, 6)
+
+    local BtnStroke = Instance.new("UIStroke", Button)
+    BtnStroke.Color = Color3.fromRGB(50, 50, 50)
+    BtnStroke.Thickness = 1
+
+    local state = defaultState
+    Button.MouseButton1Click:Connect(function()
+        state = not state
+        Button.BackgroundColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(15, 15, 15)
+        Button.TextColor3 = state and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(200, 200, 200)
+        Button.Text = name .. ": " .. (state and "ON" or "OFF")
+        BtnStroke.Color = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(50, 50, 50)
+        callback(state)
+    end)
+end
+
+-- Core Toggles
+CreateToggle("Aimlock", Settings.Aimlock.Enabled, function(v) Settings.Aimlock.Enabled = v end)
+CreateToggle("Aimbot Wall Check", Settings.Aimlock.WallCheck, function(v) Settings.Aimlock.WallCheck = v end)
+CreateToggle("Aimbot Team Check", Settings.Aimlock.TeamCheck, function(v) Settings.Aimlock.TeamCheck = v end)
+CreateToggle("FOV Circle", Settings.FOV.Enabled, function(v) Settings.FOV.Enabled = v end)
+CreateToggle("ESP Boxes", Settings.ESP.Boxes, function(v) Settings.ESP.Boxes = v end)
+CreateToggle("ESP Tracers", Settings.ESP.Tracers, function(v) Settings.ESP.Tracers = v end)
+CreateToggle("ESP Team Check", Settings.ESP.TeamCheck, function(v) Settings.ESP.TeamCheck = v end)
+
+-- Y-Offset UI Elements
+local OffsetLabel = Instance.new("TextLabel", MainFrame)
+OffsetLabel.Size = UDim2.new(0, 170, 0, 18)
+OffsetLabel.Text = "Y-Offset: 0.0 studs"
+OffsetLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+OffsetLabel.TextSize = 10
+OffsetLabel.Font = Enum.Font.GothamSemibold
+OffsetLabel.BackgroundTransparency = 1
+
+local function CreateOffsetButton(text, step)
+    local Button = Instance.new("TextButton", MainFrame)
+    Button.Size = UDim2.new(0, 170, 0, 25)
+    Button.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    Button.Text = text
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.GothamSemibold
+    Button.TextSize = 10
+
+    local BtnCorner = Instance.new("UICorner", Button)
+    BtnCorner.CornerRadius = UDim.new(0, 6)
+
+    local BtnStroke = Instance.new("UIStroke", Button)
+    BtnStroke.Color = Color3.fromRGB(50, 50, 50)
+    BtnStroke.Thickness = 1
+
+    Button.MouseButton1Click:Connect(function()
+        Settings.Aimlock.YOffset = Settings.Aimlock.YOffset + step
+        OffsetLabel.Text = string.format("Y-Offset: %.1f studs", Settings.Aimlock.YOffset)
+    end)
+end
+
+CreateOffsetButton("Y-Offset (+0.5 Up)", 0.5)
+CreateOffsetButton("Y-Offset (-0.5 Down)", -0.5)
