@@ -1,0 +1,296 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Main ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "UniversalAimbotGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = PlayerGui
+
+-- Variables
+local currentFov = 100
+
+-- ==========================================
+-- 1. DRAGGABLE OPEN/CLOSE CIRCLE BUTTON
+-- ==========================================
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleCircle"
+toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+toggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Text = "Close"
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 18
+toggleBtn.Parent = screenGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim2.new(1, 0) -- Perfect Circle
+btnCorner.Parent = toggleBtn
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(50, 50, 50)
+btnStroke.Thickness = 2
+btnStroke.Parent = toggleBtn
+
+-- Make Circle Button Draggable
+local dragging, dragInput, dragStart, startPos
+local function updateDrag(input)
+	local delta = input.Position - dragStart
+	toggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+toggleBtn.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = toggleBtn.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+toggleBtn.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		updateDrag(input)
+	end
+end)
+
+-- ==========================================
+-- 2. MAIN WINDOW FRAME
+-- ==========================================
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 520, 0, 360)
+mainFrame.Position = UDim2.new(0.5, -260, 0.5, -180)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim2.new(0, 8)
+frameCorner.Parent = mainFrame
+
+-- Title
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 200, 0, 40)
+titleLabel.Position = UDim2.new(0, 15, 0, 5)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Universal aimbot"
+titleLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Font = Enum.Font.SourceSansSemibold
+titleLabel.TextSize = 20
+titleLabel.Parent = mainFrame
+
+-- Left Sidebar Navigation
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 120, 1, -50)
+sidebar.Position = UDim2.new(0, 0, 0, 50)
+sidebar.BackgroundTransparency = 1
+sidebar.Parent = mainFrame
+
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.Padding = UDim.new(0, 10)
+sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+sidebarLayout.Parent = sidebar
+
+-- Content Area
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, -135, 1, -60)
+contentArea.Position = UDim2.new(0, 125, 0, 50)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
+
+-- Pages Container
+local pages = {}
+
+local function createPage(name)
+	local page = Instance.new("Frame")
+	page.Name = name .. "Page"
+	page.Size = UDim2.new(1, 0, 1, 0)
+	page.BackgroundTransparency = 1
+	page.Visible = false
+	page.Parent = contentArea
+	
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 15)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = page
+	
+	pages[name] = page
+	return page
+end
+
+local combatPage = createPage("Combat")
+local visualsPage = createPage("Visuals")
+
+-- Switch Tab Function
+local function selectTab(tabName)
+	for name, page in pairs(pages) do
+		page.Visible = (name == tabName)
+	end
+end
+
+local function createTabButton(text)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0.85, 0, 0, 35)
+	btn.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+	btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	btn.Text = text
+	btn.Font = Enum.Font.SourceSans
+	btn.TextSize = 16
+	btn.Parent = sidebar
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim2.new(0, 6)
+	corner.Parent = btn
+	
+	btn.MouseButton1Click:Connect(function()
+		selectTab(text)
+	end)
+end
+
+createTabButton("Combat")
+createTabButton("Visuals")
+
+-- ==========================================
+-- 3. COMBAT TAB CONTENT (Aimbot & FOV Controls)
+-- ==========================================
+local fovContainer = Instance.new("Frame")
+fovContainer.Size = UDim2.new(1, -10, 0, 80)
+fovContainer.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+fovContainer.Parent = combatPage
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim2.new(0, 6)
+fovCorner.Parent = fovContainer
+
+local fovDisplay = Instance.new("TextLabel")
+fovDisplay.Size = UDim2.new(1, 0, 0, 30)
+fovDisplay.Position = UDim2.new(0, 0, 0, 5)
+fovDisplay.BackgroundTransparency = 1
+fovDisplay.Text = "Aimbot FOV: " .. currentFov
+fovDisplay.TextColor3 = Color3.fromRGB(255, 255, 255)
+fovDisplay.Font = Enum.Font.SourceSansBold
+fovDisplay.TextSize = 18
+fovDisplay.Parent = fovContainer
+
+local minusBtn = Instance.new("TextButton")
+minusBtn.Size = UDim2.new(0, 80, 0, 30)
+minusBtn.Position = UDim2.new(0.2, -40, 0, 40)
+minusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+minusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minusBtn.Text = "-10 FOV"
+minusBtn.Font = Enum.Font.SourceSans
+minusBtn.TextSize = 16
+minusBtn.Parent = fovContainer
+local mCorner = Instance.new("UICorner") mCorner.CornerRadius = UDim2.new(0, 4) mCorner.Parent = minusBtn
+
+local plusBtn = Instance.new("TextButton")
+plusBtn.Size = UDim2.new(0, 80, 0, 30)
+plusBtn.Position = UDim2.new(0.8, -40, 0, 40)
+plusBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+plusBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+plusBtn.Text = "+10 FOV"
+plusBtn.Font = Enum.Font.SourceSans
+plusBtn.TextSize = 16
+plusBtn.Parent = fovContainer
+local pCorner = Instance.new("UICorner") pCorner.CornerRadius = UDim2.new(0, 4) pCorner.Parent = plusBtn
+
+local function updateFovDisplay()
+	fovDisplay.Text = "Aimbot FOV: " .. currentFov
+end
+
+minusBtn.MouseButton1Click:Connect(function()
+	currentFov = math.max(0, currentFov - 10)
+	updateFovDisplay()
+end)
+
+plusBtn.MouseButton1Click:Connect(function()
+	currentFov = currentFov + 10
+	updateFovDisplay()
+end)
+
+-- ==========================================
+-- 4. VISUALS TAB CONTENT (ESP Controls)
+-- ==========================================
+local function createToggleRow(parent, labelText)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -10, 0, 40)
+	row.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+	row.Parent = parent
+	
+	local rowCorner = Instance.new("UICorner")
+	rowCorner.CornerRadius = UDim2.new(0, 6)
+	rowCorner.Parent = row
+	
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(0.6, 0, 1, 0)
+	lbl.Position = UDim2.new(0, 10, 0, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = labelText
+	lbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Font = Enum.Font.SourceSans
+	lbl.TextSize = 16
+	lbl.Parent = row
+	
+	local toggle = Instance.new("TextButton")
+	toggle.Size = UDim2.new(0, 50, 0, 24)
+	toggle.Position = UDim2.new(1, -60, 0.5, -12)
+	toggle.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+	toggle.Text = "OFF"
+	toggle.TextColor3 = Color3.fromRGB(180, 180, 180)
+	toggle.Font = Enum.Font.SourceSansBold
+	toggle.TextSize = 12
+	toggle.Parent = row
+	
+	local tCorner = Instance.new("UICorner")
+	tCorner.CornerRadius = UDim2.new(0, 12)
+	tCorner.Parent = toggle
+	
+	local enabled = false
+	toggle.MouseButton1Click:Connect(function()
+		enabled = not enabled
+		if enabled then
+			toggle.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+			toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+			toggle.Text = "ON"
+		else
+			toggle.BackgroundColor3 = Color3.fromRGB(50, 50, 55)
+			toggle.TextColor3 = Color3.fromRGB(180, 180, 180)
+			toggle.Text = "OFF"
+		end
+	end)
+end
+
+createToggleRow(visualsPage, "Enable ESP")
+createToggleRow(visualsPage, "Box ESP")
+createToggleRow(visualsPage, "Tracers")
+
+-- Default Tab View
+selectTab("Combat")
+
+-- ==========================================
+-- 5. OPEN / CLOSE LOGIC
+-- ==========================================
+toggleBtn.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+	if mainFrame.Visible then
+		toggleBtn.Text = "Close"
+	else
+		toggleBtn.Text = "Open"
+	end
+end)
